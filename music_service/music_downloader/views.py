@@ -14,6 +14,8 @@ from mutagen.flac import FLAC
 from mutagen.id3 import USLT, ID3, TIT2, TALB, TPE1, ID3NoHeaderError
 from mutagen.easyid3 import EasyID3
 
+from music_downloader.api_url import MUSIC_API_SEARCH_URL, MUSIC_API_TRACK_URL, MUSIC_API_LYRIC_URL, MUSIC_API_COVER_URL
+
 # 全局变量模拟任务状态
 task_status = {
     "status": "idle",  # 状态：idle -> parsing -> downloading_song -> downloading_lyrics -> completed
@@ -68,52 +70,96 @@ def write_tags(song_path, artist, title, album, lyrics):
     except Exception as e:
         print(f"写入标签失败: {e}, 跳过...")
 
-def fetch_cover(title, album, artist):
+def fetch_cover(pic_id, source = "netease", size = 500):
     """
     根据歌名、专辑名和歌手调用 API 获取封面 URL
     """
     try:
-        cover_url = "https://api.lrc.cx/api/v1/cover/album"
-        params = {"title": title, "album": album, "artist": artist}
-        response = requests.get(cover_url, params=params)
-        print(response)
+        # 调用外部封面 API
+        cover_url = MUSIC_API_COVER_URL.replace("[PIC ID]", str(pic_id)).replace("[MUSIC SOURCE]", source).replace("[SIZE]", str(size))
+        response = requests.get(cover_url)
+        if response.status_code != 200:
+            raise Exception("获取封面失败，API 返回错误")
+        # 检查返回数据
         response_data = response.json()
+        if not response_data.get("url"):
+            raise Exception("获取封面失败，返回数据不完整")
         # 返回封面 URL
-        return response_data.get("img")
+        return response_data.get("url")
     except Exception as e:
         print(f"获取封面失败: {e}")
         return None
+    
+
+# def search_music(request):
+#     """处理搜索请求"""
+#     query = request.GET.get('query', '').strip()
+#     limit = int(request.GET.get('limit', 10))  # 默认10条，用户可选10或50条
+#     if not query:
+#         return JsonResponse({"status": "error", "message": "请输入搜索关键词"})
+
+#     try:
+#         # 调用外部搜索 API
+#     # 调用网易云音乐搜索 API
+#         search_url = f"http://music.163.com/api/search/get/web?csrf_token=&hlpretag=&hlposttag=&s={query}&type=1&offset=0&total=true&limit={limit}"
+#         response = requests.get(search_url)
+#         response_data = response.json()
+
+#         if response_data.get("code") == 200:
+#             songs = response_data["result"].get("songs", [])
+#             results = []
+#             # 提取需要的数据
+#             for song in songs:
+#                 song_id = song["id"]
+#                 song_name = song["name"]
+#                 song_artists = ", ".join(artist["name"] for artist in song["artists"])
+#                 song_album = song["album"]["name"]
+#                 # song_cover = fetch_cover(song_name, song_album, song_artists)
+#                 results.append({
+#                     "id": song_id,
+#                     "name": song_name,
+#                     "artists": song_artists,
+#                     "album": song_album,
+#                     # "cover": song_cover
+#                 }) 
+#             return JsonResponse({"status": "success", "results": results})
+#         else:
+#             return JsonResponse({"status": "error", "message": "搜索失败"})
+#     except Exception as e:
+#         return JsonResponse({"status": "error", "message": str(e)})
 
 def search_music(request):
     """处理搜索请求"""
     query = request.GET.get('query', '').strip()
     limit = int(request.GET.get('limit', 10))  # 默认10条，用户可选10或50条
+    pages = int(request.GET.get('pages', 1))  # 默认第1页
+    source = request.GET.get('source', 'netease')  # 默认网易云音乐
+
     if not query:
         return JsonResponse({"status": "error", "message": "请输入搜索关键词"})
 
     try:
         # 调用外部搜索 API
-    # 调用网易云音乐搜索 API
-        search_url = f"http://music.163.com/api/search/get/web?csrf_token=&hlpretag=&hlposttag=&s={query}&type=1&offset=0&total=true&limit={limit}"
+        search_url = MUSIC_API_SEARCH_URL.replace("[KEYWORD]", query).replace("[PAGE LENGTH]", str(limit)).replace("[PAGE NUM]", str(pages)).replace("[MUSIC SOURCE]", source)
         response = requests.get(search_url)
-        response_data = response.json()
 
-        if response_data.get("code") == 200:
-            songs = response_data["result"].get("songs", [])
+        if response.status_code == 200:
+            songs = response.json()
             results = []
             # 提取需要的数据
             for song in songs:
                 song_id = song["id"]
                 song_name = song["name"]
-                song_artists = ", ".join(artist["name"] for artist in song["artists"])
-                song_album = song["album"]["name"]
-                # song_cover = fetch_cover(song_name, song_album, song_artists)
+                song_artists = ", ".join(artist for artist in song["artist"])
+                song_album = song["album"]
+                song_cover_id= song["pic_id"]
+                song_cover = fetch_cover(song_cover_id, source)
                 results.append({
                     "id": song_id,
                     "name": song_name,
                     "artists": song_artists,
                     "album": song_album,
-                    # "cover": song_cover
+                    "cover": song_cover
                 }) 
             return JsonResponse({"status": "success", "results": results})
         else:
@@ -121,59 +167,32 @@ def search_music(request):
     except Exception as e:
         return JsonResponse({"status": "error", "message": str(e)})
 
-def download_song_thread(music_url):
+def download_song_thread(music_info, source = "netease", bitrate = "999"):
     update_status("parsing", "正在解析链接...")
 
     try:
-        # Step 1: 获取 token
-        update_status("parsing", "获取 token...")
-        token_response = requests.post('https://api.toubiec.cn/api/get-token.php')
-        token_data = token_response.json()
-        token = token_data.get('token', '')
-        if not token:
-            update_status("error", "获取 token 失败")
-            return JsonResponse({"status": "error", "message": "Failed to get token."})
-
-        encrypted_token = md5(token.encode()).hexdigest()
-        
-        time.sleep(5)  # 避免请求过快
-
-        # Step 2: 请求歌曲信息
+        # Step 1: 请求歌曲地址
         update_status("parsing", "调用接口获取歌曲信息...")
-        music_params = {
-            "url": music_url,
-            "level": "lossless",
-            "type": "song",
-            "token": encrypted_token
-        }
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json"
-        }
-        music_response = requests.post(
-            'https://api.toubiec.cn/api/music_v1.php',
-            json=music_params,
-            headers=headers
-        )
-        music_data = music_response.json()
-
-        if music_data.get('status') != 200:
+        download_url = MUSIC_API_TRACK_URL.replace("[TRACK ID]", music_info['id']).replace("[BITRATE]", bitrate).replace("[MUSIC SOURCE]", source)
+        response = requests.get(download_url)
+        if response.status_code != 200:
             update_status("error", "获取歌曲信息失败")
             return JsonResponse({"status": "error", "message": "Failed to get music information."})
-
+        # 检查返回数据
+        music_data = response.json()
+        if not music_data or 'url' not in music_data:
+            update_status("error", "歌曲信息不完整")
+            return JsonResponse({"status": "error", "message": "Incomplete music information."})
         # Step 3: 下载歌曲
         update_status("downloading_song", "正在下载歌曲...")
-        song_url = music_data.get('url_info', {}).get('url', '')
+        song_url = music_data['url']
         if not song_url:
-            update_status("error", "歌曲链接缺失")
+            update_status("error", "歌曲链接缺失，该音源可能不支持下载")
             return JsonResponse({"status": "error", "message": "Song URL is missing."})
 
         # 下载歌曲文件
         song_response = requests.get(song_url, stream=True)
-        artist = sanitize_filename(music_data['song_info']['artist'])
-        name = sanitize_filename(music_data['song_info']['name'])
-        album = sanitize_filename(music_data['song_info'].get('album', 'Unknown Album'))
-        song_path = os.path.join(settings.MEDIA_ROOT, f"{artist} - {name}.flac")
+        song_path = os.path.join(settings.MEDIA_ROOT, f"{music_info['artists']} - {music_info['name']}.flac")
         os.makedirs(os.path.dirname(song_path), exist_ok=True)
 
         with open(song_path, 'wb') as f:
@@ -182,14 +201,21 @@ def download_song_thread(music_url):
 
         # Step 4: 下载歌词
         update_status("downloading_lyrics", "正在下载歌词...")
-        lyrics = music_data['lrc']['lyric']
-        lyric_path = os.path.join(settings.MEDIA_ROOT, f"{artist} - {name}.lrc")
+        lyric_url = MUSIC_API_LYRIC_URL.replace("[LYRIC ID]", music_info['id']).replace("[MUSIC SOURCE]", source)
+        lyric_response = requests.get(lyric_url)
+        if lyric_response.status_code != 200:
+            update_status("error", "获取歌词失败")
+            return JsonResponse({"status": "error", "message": "Failed to get lyrics."})
+        # 检查返回数据
+        lyric_response_data = lyric_response.json()
+        lyrics = lyric_response_data['lyric']
+        lyric_path = os.path.join(settings.MEDIA_ROOT, f"{music_info['artists']} - {music_info['name']}.lrc")
         with open(lyric_path, 'w', encoding='utf-8') as f:
             f.write(lyrics)
 
          # Step 5: 写入标签
         update_status("writing_tags", "正在写入标签...")
-        write_tags(song_path, artist, name, album, lyrics)
+        write_tags(song_path, music_info['artists'], music_info['name'], music_info['album'], lyrics)
         
         # 完成
         update_status("completed", "下载完成！")
@@ -222,14 +248,15 @@ def download_song(request):
         # 重置状态
         update_status("idle", "等待操作...")
         
-        music_url = request.POST.get('url')
-        print(music_url)
-        try:
-            music_url = format_music_url(music_url)
-        except ValueError as e:
-            return JsonResponse({"status": "error", "message": str(e)})
-        
-        Thread(target=download_song_thread, args=(music_url,)).start()
+        music_info = {}
+        music_info['id'] = request.POST.get('id')
+        music_info['name'] = request.POST.get('name')
+        music_info['album'] = request.POST.get('album')
+        music_info['artists'] = request.POST.get('artists')
+        source = request.POST.get('source', 'netease')
+
+        print(music_info)
+        Thread(target=download_song_thread, args=(music_info,source)).start()
         
         return JsonResponse({"status": "success", "message": "Downloading..."})
     return JsonResponse({"status": "error", "message": "仅支持 POST 请求"})

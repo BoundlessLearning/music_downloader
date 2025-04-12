@@ -86,12 +86,43 @@
             background-color: #ccc;
             cursor: not-allowed;
         }
+        .source-group {
+            margin: 10px 0;
+            display: flex;
+            gap: 15px;
+        }
+        .source-option {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>音乐搜索与下载</h1>
         <input type="text" id="searchInput" placeholder="请输入歌名，例如：凄美地">
+
+        <!-- 新增音源选择 -->
+        <div class="source-group">
+            <div class="source-option">
+                <input type="radio" id="netease" name="musicSource" value="netease" checked>
+                <label for="netease">网易云音乐</label>
+            </div>
+            <div class="source-option">
+                <input type="radio" id="tencent" name="musicSource" value="tencent">
+                <label for="tencent">QQ音乐</label>
+            </div>
+            <div class="source-option">
+                <input type="radio" id="kugou" name="musicSource" value="kugou">
+                <label for="xiami">酷狗音乐</label>
+            </div>
+            <div class="source-option">
+                <input type="radio" id="kuwo" name="musicSource" value="kuwo">
+                <label for="xiami">酷我音乐</label>
+            </div>
+        </div>
+
         <select id="limitSelect">
             <option value="10">10 条</option>
             <option value="50">50 条</option>
@@ -108,6 +139,7 @@
             const limit = document.getElementById('limitSelect').value;
             const messageDiv = document.getElementById('message');
             const searchResultsDiv = document.getElementById('searchResults');
+            const source = document.querySelector('input[name="musicSource"]:checked').value; // 获取选中的音源
 
             if (!searchInput) {
                 messageDiv.innerHTML = '<div class="error">请输入歌名！</div>';
@@ -120,13 +152,14 @@
 
             try {
                 // 调用 /music/search/ 接口
-                const response = await fetch(`/music/search/?query=${encodeURIComponent(searchInput)}&limit=${limit}`);
+                const response = await fetch(`/music/search/?query=${encodeURIComponent(searchInput)}&limit=${limit}&source=${source}`);
                 const data = await response.json();
 
                 if (data.status === "success") {
                     const results = data.results;
                     if (results.length > 0) {
                         results.forEach(result => {
+                            result.source = source;  // 添加音源信息
                             const resultItem = document.createElement('div');
                             resultItem.className = 'result-item';
 
@@ -150,7 +183,7 @@
                             downloadBtn.className = 'download-btn';
                             downloadBtn.textContent = '下载';
                             downloadBtn.addEventListener('click', () => {
-                                downloadSong(result.id);
+                                downloadSong(result);
                             });
 
                             resultItem.appendChild(resultInfo);
@@ -170,7 +203,7 @@
         });
 
         // 下载歌曲
-        async function downloadSong(songId) {
+        async function downloadSong(songInfo) {
             const messageDiv = document.getElementById('message');
             messageDiv.innerHTML = '<div class="progress">正在下载...</div>';
 
@@ -179,7 +212,11 @@
 
                 // 使用 FormData 传递数据
                 const formData = new FormData();
-                formData.append('url', songId);  // 添加歌曲 ID
+                formData.append('id', songInfo.id);  // 添加歌曲 ID
+                formData.append('name', songInfo.name);  // 添加歌曲名称
+                formData.append('artists', songInfo.artists);  // 添加歌手信息
+                formData.append('album', songInfo.album);  // 添加专辑信息
+                formData.append('source', songInfo.source);  // 添加音源信息
 
                 // 调用 /music/download/ 接口
                 const response = await fetch('/music/download/', {
