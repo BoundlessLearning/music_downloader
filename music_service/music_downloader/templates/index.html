@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>音乐搜索与下载</title>
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 50px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        input[type="text"], select {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .message {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .search-results {
+            margin-top: 20px;
+        }
+        .result-item {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            border-bottom: 1px solid #ccc;
+        }
+        .result-item:last-child {
+            border-bottom: none;
+        }
+        .album-cover {
+            width: 60px;
+            height: 60px;
+            margin-right: 15px;
+            border-radius: 4px;
+        }
+        .result-info {
+            flex: 1;
+        }
+        .result-info h3 {
+            margin: 0;
+        }
+        .result-info p {
+            margin: 5px 0 0;
+            color: #666;
+        }
+        .download-btn {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .download-btn:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>音乐搜索与下载</h1>
+        <input type="text" id="searchInput" placeholder="请输入歌名，例如：凄美地">
+        <select id="limitSelect">
+            <option value="10">10 条</option>
+            <option value="50">50 条</option>
+        </select>
+        <button id="searchBtn">搜索</button>
+        <div id="message" class="message"></div>
+        <div id="searchResults" class="search-results"></div>
+    </div>
+
+    <script>
+        // 搜索歌曲
+        document.getElementById('searchBtn').addEventListener('click', async function () {
+            const searchInput = document.getElementById('searchInput').value;
+            const limit = document.getElementById('limitSelect').value;
+            const messageDiv = document.getElementById('message');
+            const searchResultsDiv = document.getElementById('searchResults');
+
+            if (!searchInput) {
+                messageDiv.innerHTML = '<div class="error">请输入歌名！</div>';
+                return;
+            }
+
+            // 清空之前的搜索结果
+            searchResultsDiv.innerHTML = '';
+            messageDiv.innerHTML = '<div class="progress">正在搜索...</div>';
+
+            try {
+                // 调用 /music/search/ 接口
+                const response = await fetch(`/music/search/?query=${encodeURIComponent(searchInput)}&limit=${limit}`);
+                const data = await response.json();
+
+                if (data.status === "success") {
+                    const results = data.results;
+                    if (results.length > 0) {
+                        results.forEach(result => {
+                            const resultItem = document.createElement('div');
+                            resultItem.className = 'result-item';
+
+                            // 专辑封面
+                            const albumCover = document.createElement('img');
+                            albumCover.className = 'album-cover';
+                            albumCover.src = result.cover || 'https://placehold.co/60x60'; // 默认图片
+                            resultItem.appendChild(albumCover);
+
+                            // 歌曲信息
+                            const resultInfo = document.createElement('div');
+                            resultInfo.className = 'result-info';
+                            resultInfo.innerHTML = `
+                                <h3>${result.name}</h3>
+                                <p>歌手：${result.artists}</p>
+                                <p>专辑：${result.album}</p>
+                            `;
+
+                            // 下载按钮
+                            const downloadBtn = document.createElement('button');
+                            downloadBtn.className = 'download-btn';
+                            downloadBtn.textContent = '下载';
+                            downloadBtn.addEventListener('click', () => {
+                                downloadSong(result.id);
+                            });
+
+                            resultItem.appendChild(resultInfo);
+                            resultItem.appendChild(downloadBtn);
+                            searchResultsDiv.appendChild(resultItem);
+                        });
+                        messageDiv.innerHTML = '<div class="success">搜索成功！</div>';
+                    } else {
+                        messageDiv.innerHTML = '<div class="error">未找到相关歌曲。</div>';
+                    }
+                } else {
+                    messageDiv.innerHTML = `<div class="error">${data.message}</div>`;
+                }
+            } catch (error) {
+                messageDiv.innerHTML = `<div class="error">请求失败：${error.message}</div>`;
+            }
+        });
+
+        // 下载歌曲
+        async function downloadSong(songId) {
+            const messageDiv = document.getElementById('message');
+            messageDiv.innerHTML = '<div class="progress">正在下载...</div>';
+
+            try {
+                const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+
+                // 使用 FormData 传递数据
+                const formData = new FormData();
+                formData.append('url', songId);  // 添加歌曲 ID
+
+                // 调用 /music/download/ 接口
+                const response = await fetch('/music/download/', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': csrfToken  // 确保传递 CSRF Token
+                    },
+                    body: formData  // 使用 FormData
+                });
+                const data = await response.json();
+
+                if (data.status === "success") {
+                    pollDownloadStatus();  // 开始轮询下载状态
+                } else {
+                    messageDiv.innerHTML = `<div class="error">${data.message}</div>`;
+                }
+            } catch (error) {
+                messageDiv.innerHTML = `<div class="error">下载失败：${error.message}</div>`;
+            }
+        }
+
+        // 轮询下载状态
+        async function pollDownloadStatus() {
+            const messageDiv = document.getElementById('message');
+
+            const interval = setInterval(async () => {
+                try {
+                    // 调用 /music/status/ 接口
+                    const response = await fetch('/music/status/');
+                    const data = await response.json();
+
+                    // 更新状态
+                    messageDiv.innerHTML = `<div class="progress">${data.message}</div>`;
+
+                    // 如果任务完成或失败，停止轮询
+                    if (data.status === "completed" || data.status === "error") {
+                        clearInterval(interval);
+                        if (data.status === "completed") {
+                            messageDiv.innerHTML = `<div class="success">${data.message}</div>`;
+                        } else {
+                            messageDiv.innerHTML = `<div class="error">${data.message}</div>`;
+                        }
+                    }
+                } catch (error) {
+                    clearInterval(interval);
+                    messageDiv.innerHTML = `<div class="error">状态请求失败：${error.message}</div>`;
+                }
+            }, 1000);  // 每秒轮询一次
+        }
+    </script>
+</body>
+</html>
