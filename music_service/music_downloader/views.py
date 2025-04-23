@@ -191,8 +191,9 @@ def download_song_thread(music_info, source = "netease", bitrate = "999"):
             return JsonResponse({"status": "error", "message": "Song URL is missing."})
 
         # 下载歌曲文件
+        extension = song_url.split('.')[-1]
         song_response = requests.get(song_url, stream=True)
-        song_path = os.path.join(settings.MEDIA_ROOT, f"{music_info['artists']} - {music_info['name']}.flac")
+        song_path = os.path.join(settings.MEDIA_ROOT, f"{music_info['artists']} - {music_info['name']}.{extension}")
         os.makedirs(os.path.dirname(song_path), exist_ok=True)
 
         with open(song_path, 'wb') as f:
