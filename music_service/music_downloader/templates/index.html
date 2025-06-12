@@ -151,8 +151,8 @@
             messageDiv.innerHTML = '<div class="progress">正在搜索...</div>';
 
             try {
-                // 调用 /music/search/ 接口
-                const response = await fetch(`/music/search/?query=${encodeURIComponent(searchInput)}&limit=${limit}&source=${source}`);
+                // 调用 search/ 接口
+                const response = await fetch(`search/?query=${encodeURIComponent(searchInput)}&limit=${limit}&source=${source}`);
                 const data = await response.json();
 
                 if (data.status === "success") {
@@ -218,8 +218,8 @@
                 formData.append('album', songInfo.album);  // 添加专辑信息
                 formData.append('source', songInfo.source);  // 添加音源信息
 
-                // 调用 /music/download/ 接口
-                const response = await fetch('/music/download/', {
+                // 调用 download/ 接口
+                const response = await fetch('download/', {
                     method: 'POST',
                     headers: {
                         'X-CSRFToken': csrfToken  // 确保传递 CSRF Token
@@ -244,8 +244,8 @@
 
             const interval = setInterval(async () => {
                 try {
-                    // 调用 /music/status/ 接口
-                    const response = await fetch('/music/status/');
+                    // 调用 status/ 接口
+                    const response = await fetch('status/');
                     const data = await response.json();
 
                     // 更新状态
