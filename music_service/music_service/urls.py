@@ -18,9 +18,12 @@ from django.contrib import admin
 from django.urls import include, path
 from django.views.generic import TemplateView
 
+from music_service.settings import BASE_URL
+
+base_url = BASE_URL.strip('/')
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path('', TemplateView.as_view(template_name='index.html'), name='index'),
-    path('music/', include('music_downloader.urls')),
+    path(f'{base_url}/', TemplateView.as_view(template_name='index.html'), name='index'),
+    path(f'{base_url}/', include('music_downloader.urls')),
 ]
